@@ -1,0 +1,67 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h> // UNIX Standard function definitions
+#include <fcntl.h> // File control definitions
+#include <errno.h> // Error number definitions
+#include <termios.h> // POSIX terminal control definitions
+
+int main() {
+    int serial_port = open("/dev/ttyUSB0", O_RDWR);
+
+    // Check for errors
+    if (serial_port < 0) {
+        printf("Error %i from open: %s\n", errno, strerror(errno));
+        return 1;
+    }
+
+    // Create new termios struct, we call it 'tty' for 'terminal'
+    struct termios tty;
+
+    // Read in existing settings, and handle any error
+    if(tcgetattr(serial_port, &tty) != 0) {
+        printf("Error %i from tcgetattr: %s\n", errno, strerror(errno));
+        return 1;
+    }
+
+    tty.c_cflag &= ~PARENB; // Clear parity bit, disabling parity
+    tty.c_cflag &= ~CSTOPB; // Clear stop field, only one stop bit used in communication
+    tty.c_cflag &= ~CSIZE; // Clear all bits that set the data size
+    tty.c_cflag |= CS8; // 8 bits per byte
+    tty.c_cflag &= ~CRTSCTS; // Disable RTS/CTS hardware flow control
+    tty.c_cflag |= CREAD | CLOCAL; // Turn on READ & ignore ctrl lines
+
+    // Set in/out baud rate to be 115200
+    cfsetispeed(&tty, B115200);
+    cfsetospeed(&tty, B115200);
+
+    // Save tty settings, also checking for error
+    if (tcsetattr(serial_port, TCSANOW, &tty) != 0) {
+        printf("Error %i from tcsetattr: %s\n", errno, strerror(errno));
+        return 1;
+    }
+
+    // Write to serial port
+    char *command = "COMM:BAUD?";
+    write(serial_port, command, strlen(command));
+
+    // Allocate memory for read buffer
+    char read_buf [256];
+    memset(&read_buf, '\0', sizeof(read_buf));
+
+    // Read bytes. Here we only read the first 128 bytes
+    int num_bytes = read(serial_port, &read_buf, sizeof(read_buf));
+
+    // n is the number of bytes read. It could be 0 if no bytes were received, and the loop is then skipped
+    if (num_bytes < 0) {
+        printf("Error reading: %s", strerror(errno));
+        return 1;
+    }
+
+    // You may need to parse the response here to extract useful information
+
+    // Don't forget to close the serial port
+    close(serial_port);
+
+    return 0; // Success
+}
