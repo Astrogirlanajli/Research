@@ -1,67 +1,63 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h> // UNIX Standard function definitions
-#include <fcntl.h> // File control definitions
-#include <errno.h> // Error number definitions
-#include <termios.h> // POSIX terminal control definitions
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <termios.h>
 
 int main() {
-    int serial_port = open("/dev/ttyUSB0", O_RDWR);
+    // The path to the serial device might be different on your machine
+    const char *serial_port_path = "/dev/ttyUSB0";
+    double sensor_clock_frequency_hz = ...; // You need to fill in the actual clock frequency here
+    double exposure_time_microseconds = 0.33;
+    int serial_port;
 
-    // Check for errors
+    // Open the serial port
+    serial_port = open(serial_port_path, O_RDWR);
+
     if (serial_port < 0) {
-        printf("Error %i from open: %s\n", errno, strerror(errno));
-        return 1;
+        fprintf(stderr, "Error opening %s: %s\n", serial_port_path, strerror(errno));
+        return EXIT_FAILURE;
     }
 
-    // Create new termios struct, we call it 'tty' for 'terminal'
+    // Configure the serial port
     struct termios tty;
+    memset(&tty, 0, sizeof tty);
 
-    // Read in existing settings, and handle any error
-    if(tcgetattr(serial_port, &tty) != 0) {
-        printf("Error %i from tcgetattr: %s\n", errno, strerror(errno));
-        return 1;
+    // Error Handling
+    if (tcgetattr(serial_port, &tty) != 0) {
+        fprintf(stderr, "Error %d from tcgetattr: %s\n", errno, strerror(errno));
+        return EXIT_FAILURE;
     }
 
-    tty.c_cflag &= ~PARENB; // Clear parity bit, disabling parity
-    tty.c_cflag &= ~CSTOPB; // Clear stop field, only one stop bit used in communication
-    tty.c_cflag &= ~CSIZE; // Clear all bits that set the data size
-    tty.c_cflag |= CS8; // 8 bits per byte
-    tty.c_cflag &= ~CRTSCTS; // Disable RTS/CTS hardware flow control
-    tty.c_cflag |= CREAD | CLOCAL; // Turn on READ & ignore ctrl lines
-
-    // Set in/out baud rate to be 115200
-    cfsetispeed(&tty, B115200);
+    // Set baud rate to 115200 bps
     cfsetospeed(&tty, B115200);
+    cfsetispeed(&tty, B115200);
 
-    // Save tty settings, also checking for error
+    // ... (rest of serial port configuration)
+
+    // Save TTY settings
     if (tcsetattr(serial_port, TCSANOW, &tty) != 0) {
-        printf("Error %i from tcsetattr: %s\n", errno, strerror(errno));
-        return 1;
+        fprintf(stderr, "Error %d from tcsetattr: %s\n", errno, strerror(errno));
+        return EXIT_FAILURE;
     }
 
-    // Write to serial port
-    char *command = "COMM:BAUD?";
+    // Calculate the number of clock cycles for the desired exposure time
+    int clock_cycles = (int)(exposure_time_microseconds * sensor_clock_frequency_hz);
+
+    // Construct and send the command to set the exposure time
+    char command[256];
+    sprintf(command, "SENS:EXPPER %d\r\n", clock_cycles);
     write(serial_port, command, strlen(command));
 
-    // Allocate memory for read buffer
-    char read_buf [256];
-    memset(&read_buf, '\0', sizeof(read_buf));
+    // ... (You would need to implement reading the response here)
 
-    // Read bytes. Here we only read the first 128 bytes
-    int num_bytes = read(serial_port, &read_buf, sizeof(read_buf));
+    // Send the command to save the SOC settings
+    write(serial_port, "SOC:SAVE\r\n", strlen("SOC:SAVE\r\n"));
 
-    // n is the number of bytes read. It could be 0 if no bytes were received, and the loop is then skipped
-    if (num_bytes < 0) {
-        printf("Error reading: %s", strerror(errno));
-        return 1;
-    }
-
-    // You may need to parse the response here to extract useful information
-
-    // Don't forget to close the serial port
+    // Close the serial port
     close(serial_port);
 
-    return 0; // Success
+    return EXIT_SUCCESS;
 }
